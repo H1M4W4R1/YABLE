@@ -1,9 +1,5 @@
-# YABLE
-
-**Yet Another Bluetooth Low Energy (Debugger)*
-
 <div align="center">
-  <h1>GameFlow</h1>
+  <h1>Yet Another Bluetooth Low Energy (Debugger)</h1>
   <img src="https://github.com/H1M4W4R1/YABLE/blob/master/gh_images/screenshot.png" alt="Preview screenshot"/>
 </div>
 
