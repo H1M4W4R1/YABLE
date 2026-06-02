@@ -12,6 +12,7 @@ from helpers.formatting import ValueFormat, bytes_to_text
 from models import CharacteristicModel, DescriptorModel, DiscoveredDevice, ServiceModel
 from ui.dialogs.write_dialog import WriteDialog
 from ui.main.header import build_main_header
+from ui.main.resize_grip import build_resize_grip
 from ui.panels.devices.panel import build_devices_panel, select_device, tick_elapsed, upsert_device
 from ui.panels.gatt.panel import build_gatt_panel, clear_gatt, render_service, render_services
 
@@ -41,6 +42,10 @@ class BleDebuggerApp(tk.Tk):
         self._is_maximized = False
         self._drag_start_x = 0
         self._drag_start_y = 0
+        self._resize_start_x = 0
+        self._resize_start_y = 0
+        self._resize_start_width = 0
+        self._resize_start_height = 0
 
         self._configure_styles()
         self._build_layout()
@@ -85,6 +90,7 @@ class BleDebuggerApp(tk.Tk):
 
         build_devices_panel(self, left)
         build_gatt_panel(self, right)
+        build_resize_grip(self)
 
     def _begin_window_drag(self, event: tk.Event) -> None:
         if self._is_maximized:
