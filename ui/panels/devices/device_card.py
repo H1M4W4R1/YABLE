@@ -22,8 +22,11 @@ def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
     top.columnconfigure(0, weight=1)
     name = tk.Label(top, text="", bg=COLORS["panel_2"], fg=COLORS["text"], font=("Segoe UI Semibold", 10), anchor="w")
     name.grid(row=0, column=0, sticky="ew")
+    connected = tk.Label(top, text="Connected", bg=COLORS["panel_2"], fg=COLORS["success"], font=("Segoe UI Semibold", 8), anchor="e")
+    connected.grid(row=0, column=1, sticky="e", padx=(8, 0))
+    connected.grid_remove()
     rssi = tk.Label(top, text="", bg=COLORS["panel_2"], fg=COLORS["accent_2"], font=("Segoe UI", 9), anchor="e")
-    rssi.grid(row=0, column=1, sticky="e", padx=(8, 0))
+    rssi.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     address_label = tk.Label(frame, text=address, bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Cascadia Mono", 8), anchor="w")
     address_label.grid(row=1, column=0, sticky="ew", padx=12)
@@ -38,7 +41,7 @@ def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
     last = tk.Label(meta, text="", bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="e")
     last.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(8, 0))
 
-    background_widgets = [top, meta, name, rssi, address_label, company, appearance, last]
+    background_widgets = [top, meta, name, connected, rssi, address_label, company, appearance, last]
     for widget in [frame, *background_widgets]:
         widget.bind("<Button-1>", lambda _event, selected=address: app._select_device(selected))
         widget.bind("<Double-Button-1>", lambda _event, selected=address: app._connect_device_card(selected))
@@ -49,6 +52,7 @@ def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
         "address": address_label,
         "last": last,
         "rssi": rssi,
+        "connected": connected,
         "company": company,
         "appearance": appearance,
         "background_widgets": background_widgets,

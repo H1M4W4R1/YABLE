@@ -13,7 +13,7 @@ from models import CharacteristicModel, DescriptorModel, DiscoveredDevice, Servi
 from ui.dialogs.write_dialog import WriteDialog
 from ui.main.header import build_main_header
 from ui.main.resize_grip import build_resize_grip
-from ui.panels.devices.panel import build_devices_panel, select_device, tick_elapsed, upsert_device
+from ui.panels.devices.panel import build_devices_panel, refresh_device_card_states, select_device, tick_elapsed, upsert_device
 from ui.panels.gatt.panel import build_gatt_panel, clear_gatt, render_service, render_services
 
 
@@ -38,6 +38,8 @@ class BleDebuggerApp(tk.Tk):
         self.scan_running = False
         self.connected = False
         self.selected_address: str | None = None
+        self.connecting_address: str | None = None
+        self.connected_address: str | None = None
         self._normal_geometry = ""
         self._is_maximized = False
         self._drag_start_x = 0
@@ -145,6 +147,7 @@ class BleDebuggerApp(tk.Tk):
         if not self.selected_address:
             return
         self.connect_button.configure(state="disabled")
+        self.connecting_address = self.selected_address
         self.bridge.connect(self.selected_address)
 
     def _connect_device_card(self, address: str) -> None:
@@ -179,7 +182,10 @@ class BleDebuggerApp(tk.Tk):
             self._set_status(str(payload))
         elif event == "services":
             self.connected = True
+            self.connected_address = self.connecting_address or self.selected_address
+            self.connecting_address = None
             self.disconnect_button.configure(state="normal")
+            refresh_device_card_states(self)
             self._render_services(payload)
         elif event == "characteristic_value":
             handle, data = payload
@@ -194,7 +200,11 @@ class BleDebuggerApp(tk.Tk):
             self._set_status(str(payload))
         elif event == "disconnected":
             self.connected = False
+            self.connected_address = None
+            self.connecting_address = None
             self.disconnect_button.configure(state="disabled")
+            self.connect_button.configure(state="normal" if self.selected_address else "disabled")
+            refresh_device_card_states(self)
             self._set_status("Disconnected")
         elif event == "error":
             self._set_status(f"Error: {payload}")

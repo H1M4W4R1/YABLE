@@ -10,7 +10,7 @@ from ui.icons import configure_icon_button
 def build_devices_header(app: tk.Tk, parent: ttk.Frame) -> None:
     header = ttk.Frame(parent, style="Panel.TFrame")
     header.pack(fill="x", padx=14, pady=(14, 8))
-    ttk.Label(header, text="Advertised devices", style="Title.TLabel").pack(side="left")
+    ttk.Label(header, text="Devices", style="Title.TLabel").pack(side="left")
     app.scan_button = ttk.Button(header, text="Start scan", command=app._toggle_scan, style="Accent.TButton")
     configure_icon_button(app, app.scan_button, "magnifying-glass", "#061018")
     app.scan_button.pack(side="right", padx=(8, 0))

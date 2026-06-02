@@ -14,6 +14,8 @@ from ui.panels.devices.header import build_devices_header
 from ui.resize_visibility import handle_canvas_resize
 from ui.scrolling import bind_canvas_mousewheel
 
+DEVICE_SCROLL_GUTTER = 10
+
 
 def build_devices_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     build_devices_header(app, parent)
@@ -26,20 +28,22 @@ def build_devices_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     app.device_frame = ttk.Frame(app.device_canvas, style="Panel.TFrame")
     app.device_canvas_window = app.device_canvas.create_window((0, 0), window=app.device_frame, anchor="nw")
     app.device_frame.bind("<Configure>", lambda _: app.device_canvas.configure(scrollregion=app.device_canvas.bbox("all")))
-    app.device_canvas.bind("<Configure>", lambda event: handle_canvas_resize(app, app.device_canvas, app.device_canvas_window, event.width))
+    app.device_canvas.bind(
+        "<Configure>",
+        lambda event: handle_canvas_resize(
+            app,
+            app.device_canvas,
+            app.device_canvas_window,
+            max(1, event.width - DEVICE_SCROLL_GUTTER),
+        ),
+    )
     bind_canvas_mousewheel(app.device_canvas)
 
 
 def select_device(app: tk.Tk, address: str) -> None:
     app.selected_address = address
     app.connect_button.configure(state="normal")
-    for card_address, widgets in app.device_cards.items():
-        selected = card_address == address
-        bg = COLORS["panel_3"] if selected else COLORS["panel_2"]
-        border = COLORS["accent"] if selected else COLORS["line"]
-        widgets["frame"].configure(bg=bg, highlightbackground=border)
-        for widget in widgets.get("background_widgets", []):
-            widget.configure(bg=bg)
+    refresh_device_card_states(app)
 
 
 def upsert_device(app: tk.Tk, record: DiscoveredDevice) -> None:
@@ -47,6 +51,7 @@ def upsert_device(app: tk.Tk, record: DiscoveredDevice) -> None:
     if record.address not in app.device_cards:
         app.device_cards[record.address] = create_device_card(app, record.address)
     update_device_card(app, app.device_cards[record.address], record, format_elapsed(time.time() - record.last_seen))
+    apply_device_card_state(app, record.address, app.device_cards[record.address])
 
 
 def tick_elapsed(app: tk.Tk) -> None:
@@ -56,3 +61,23 @@ def tick_elapsed(app: tk.Tk) -> None:
         if widgets:
             widgets["last"].configure(text=format_elapsed(now - record.last_seen))
     app.after(1000, app._tick_elapsed)
+
+
+def refresh_device_card_states(app: tk.Tk) -> None:
+    for address, widgets in app.device_cards.items():
+        apply_device_card_state(app, address, widgets)
+
+
+def apply_device_card_state(app: tk.Tk, address: str, widgets: dict[str, Any]) -> None:
+    selected = address == app.selected_address
+    connected = address == app.connected_address
+    bg = COLORS["panel_3"] if selected or connected else COLORS["panel_2"]
+    border = COLORS["success"] if connected else COLORS["accent"] if selected else COLORS["line"]
+
+    widgets["frame"].configure(bg=bg, highlightbackground=border)
+    for widget in widgets.get("background_widgets", []):
+        widget.configure(bg=bg)
+    if connected:
+        widgets["connected"].grid()
+    else:
+        widgets["connected"].grid_remove()
