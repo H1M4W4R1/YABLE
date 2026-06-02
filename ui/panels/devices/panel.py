@@ -11,6 +11,7 @@ from helpers.formatting import format_elapsed
 from models import DiscoveredDevice
 from ui.panels.devices.device_card import create_device_card, update_device_card
 from ui.panels.devices.header import build_devices_header
+from ui.scrolling import bind_canvas_mousewheel
 
 
 def build_devices_panel(app: tk.Tk, parent: ttk.Frame) -> None:
@@ -25,6 +26,7 @@ def build_devices_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     app.device_canvas_window = app.device_canvas.create_window((0, 0), window=app.device_frame, anchor="nw")
     app.device_frame.bind("<Configure>", lambda _: app.device_canvas.configure(scrollregion=app.device_canvas.bbox("all")))
     app.device_canvas.bind("<Configure>", lambda event: app.device_canvas.itemconfigure(app.device_canvas_window, width=event.width))
+    bind_canvas_mousewheel(app.device_canvas)
 
 
 def select_device(app: tk.Tk, address: str) -> None:

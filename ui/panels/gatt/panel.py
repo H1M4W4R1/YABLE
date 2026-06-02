@@ -9,6 +9,7 @@ from ui.panels.gatt.characteristic_card import render_characteristic_card
 from ui.panels.gatt.descriptor_card import render_descriptor_card
 from ui.panels.gatt.header import build_gatt_header
 from ui.panels.gatt.service_header import render_service_header
+from ui.scrolling import bind_canvas_mousewheel
 
 
 def build_gatt_panel(app: tk.Tk, parent: ttk.Frame) -> None:
@@ -23,6 +24,7 @@ def build_gatt_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     app.canvas_window = app.canvas.create_window((0, 0), window=app.gatt_frame, anchor="nw")
     app.gatt_frame.bind("<Configure>", lambda _: app.canvas.configure(scrollregion=app.canvas.bbox("all")))
     app.canvas.bind("<Configure>", lambda event: app.canvas.itemconfigure(app.canvas_window, width=event.width))
+    bind_canvas_mousewheel(app.canvas)
 
 
 def clear_gatt(app: tk.Tk) -> None:
