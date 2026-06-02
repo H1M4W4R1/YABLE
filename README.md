@@ -10,11 +10,14 @@ YABLE is a small desktop BLE debugging application for scanning nearby Bluetooth
 
 - Live BLE advertisement scanning.
 - Device list with last advertisement age, RSSI value, and signal strength icon.
+- Card-style device selector with advertised company names and GAP appearance when available.
 - Connect and discover GATT services from the selected device.
 - Foldout service groups with characteristics listed below each service.
-- Friendly service and characteristic names when standard UUIDs or user description descriptors are available.
+- Friendly service, characteristic, and descriptor names from the Bluetooth Numbers Database.
 - Read characteristic values when `read` is supported.
 - Write characteristic values when `write` or `write-without-response` is supported.
+- Read and write descriptor values from the GATT panel.
+- Characteristic descriptors are collapsed under each characteristic by default.
 - Enable and stop notifications or indications when available.
 - Switch displayed value format from the characteristic context menu:
   - `HEX`

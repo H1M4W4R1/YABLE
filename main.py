@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import binascii
+import json
 import queue
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable
 
 import tkinter as tk
@@ -16,12 +18,14 @@ from tkinter import messagebox, ttk
 try:
     from bleak import BleakClient, BleakScanner
     from bleak.backends.characteristic import BleakGATTCharacteristic
+    from bleak.backends.descriptor import BleakGATTDescriptor
     from bleak.backends.device import BLEDevice
     from bleak.backends.scanner import AdvertisementData
 except ImportError:  # pragma: no cover - exercised by users before deps install
     BleakClient = None
     BleakScanner = None
     BleakGATTCharacteristic = Any
+    BleakGATTDescriptor = Any
     BLEDevice = Any
     AdvertisementData = Any
 
@@ -55,31 +59,123 @@ class ValueFormat(str, Enum):
 
 FORMAT_LABELS = [fmt.value for fmt in ValueFormat]
 
-STANDARD_UUID_NAMES = {
-    "00001800-0000-1000-8000-00805f9b34fb": "Generic Access",
-    "00001801-0000-1000-8000-00805f9b34fb": "Generic Attribute",
-    "0000180a-0000-1000-8000-00805f9b34fb": "Device Information",
-    "0000180d-0000-1000-8000-00805f9b34fb": "Heart Rate",
-    "0000180f-0000-1000-8000-00805f9b34fb": "Battery Service",
-    "00002a00-0000-1000-8000-00805f9b34fb": "Device Name",
-    "00002a01-0000-1000-8000-00805f9b34fb": "Appearance",
-    "00002a05-0000-1000-8000-00805f9b34fb": "Service Changed",
-    "00002a19-0000-1000-8000-00805f9b34fb": "Battery Level",
-    "00002a29-0000-1000-8000-00805f9b34fb": "Manufacturer Name",
-    "00002a24-0000-1000-8000-00805f9b34fb": "Model Number",
-    "00002a25-0000-1000-8000-00805f9b34fb": "Serial Number",
-    "00002a26-0000-1000-8000-00805f9b34fb": "Firmware Revision",
-    "00002a27-0000-1000-8000-00805f9b34fb": "Hardware Revision",
-    "00002a37-0000-1000-8000-00805f9b34fb": "Heart Rate Measurement",
-}
+UUID_DATA_DIR = Path(__file__).resolve().parent / "data" / "uuids"
+BLUETOOTH_BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"
 
 
 def normalize_uuid(uuid: str) -> str:
     return str(uuid).lower()
 
 
+class BluetoothNumbers:
+    def __init__(self, data_dir: Path) -> None:
+        self.data_dir = data_dir
+        self.service_names = self._load_uuid_names("service_uuids.json")
+        self.characteristic_names = self._load_uuid_names("characteristic_uuids.json")
+        self.descriptor_names = self._load_uuid_names("descriptor_uuids.json")
+        self.company_names = self._load_company_names()
+        self.appearance_names = self._load_appearance_names()
+
+    def _load_json(self, filename: str) -> Any:
+        path = self.data_dir / filename
+        if not path.exists():
+            return []
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+
+    def _load_uuid_names(self, filename: str) -> dict[str, str]:
+        names: dict[str, str] = {}
+        for entry in self._load_json(filename):
+            uuid = str(entry.get("uuid", "")).strip()
+            name = str(entry.get("name", "")).strip()
+            if not uuid or not name:
+                continue
+            for key in uuid_lookup_keys(uuid):
+                names[key] = name
+        return names
+
+    def _load_company_names(self) -> dict[int, str]:
+        names: dict[int, str] = {}
+        for entry in self._load_json("company_ids.json"):
+            value = entry.get("value", entry.get("id", entry.get("code")))
+            name = str(entry.get("name", "")).strip()
+            if value is None or not name:
+                continue
+            try:
+                names[int(value)] = name
+            except (TypeError, ValueError):
+                continue
+        return names
+
+    def _load_appearance_names(self) -> dict[int, str]:
+        names: dict[int, str] = {}
+        for entry in self._load_json("gap_appearance.json"):
+            name = str(entry.get("name", entry.get("description", ""))).strip()
+            if not name:
+                continue
+            category = entry.get("category")
+            value = entry.get("value")
+            try:
+                if value is None:
+                    value = int(category) << 6
+                names[int(value)] = name
+            except (TypeError, ValueError):
+                continue
+            subcategories = entry.get("subcategory", [])
+            if not isinstance(subcategories, list):
+                subcategories = [{"value": subcategories, "name": name}]
+            for subcategory in subcategories:
+                sub_name = str(subcategory.get("name", "")).strip()
+                sub_value = subcategory.get("value")
+                if not sub_name or sub_value is None:
+                    continue
+                try:
+                    names[(int(category) << 6) | int(sub_value)] = f"{name}: {sub_name}"
+                except (TypeError, ValueError):
+                    continue
+        return names
+
+    def service_name(self, uuid: str, fallback: str = "BLE Service") -> str:
+        return self.service_names.get(normalize_uuid(uuid), fallback)
+
+    def characteristic_name(self, uuid: str, fallback: str = "BLE Characteristic") -> str:
+        return self.characteristic_names.get(normalize_uuid(uuid), fallback)
+
+    def descriptor_name(self, uuid: str, fallback: str = "BLE Descriptor") -> str:
+        return self.descriptor_names.get(normalize_uuid(uuid), fallback)
+
+    def company_name(self, company_id: int) -> str:
+        return self.company_names.get(company_id, f"Company 0x{company_id:04X}")
+
+    def appearance_name(self, appearance: int | None) -> str | None:
+        if appearance is None:
+            return None
+        return self.appearance_names.get(appearance, f"Appearance 0x{appearance:04X}")
+
+
+def uuid_lookup_keys(uuid: str) -> list[str]:
+    normalized = normalize_uuid(uuid)
+    keys = [normalized]
+    compact = normalized.replace("-", "")
+    if len(compact) == 4:
+        keys.append(f"0000{compact}{BLUETOOTH_BASE_UUID_SUFFIX}")
+    elif len(compact) == 8:
+        keys.append(f"{compact}{BLUETOOTH_BASE_UUID_SUFFIX}")
+    return keys
+
+
+BLUETOOTH_NUMBERS = BluetoothNumbers(UUID_DATA_DIR)
+
+
 def friendly_uuid_name(uuid: str, fallback: str) -> str:
-    return STANDARD_UUID_NAMES.get(normalize_uuid(uuid), fallback)
+    return (
+        BLUETOOTH_NUMBERS.service_name(uuid, "")
+        or BLUETOOTH_NUMBERS.characteristic_name(uuid, "")
+        or BLUETOOTH_NUMBERS.descriptor_name(uuid, "")
+        or fallback
+    )
 
 
 def format_elapsed(seconds: float) -> str:
@@ -103,6 +199,48 @@ def signal_icon(rssi: int | None) -> str:
     if rssi >= -85:
         return "▂▄▁▁"
     return "▂▁▁▁"
+
+
+def signal_icon(rssi: int | None) -> str:
+    if rssi is None:
+        return "----"
+    if rssi >= -55:
+        return "best"
+    if rssi >= -70:
+        return "good"
+    if rssi >= -85:
+        return "fair"
+    return "weak"
+
+
+def manufacturer_names(advertisement: AdvertisementData | None) -> list[str]:
+    manufacturer_data = getattr(advertisement, "manufacturer_data", None) or {}
+    return [BLUETOOTH_NUMBERS.company_name(int(company_id)) for company_id in sorted(manufacturer_data)]
+
+
+def extract_gap_appearance(advertisement: AdvertisementData | None) -> int | None:
+    if advertisement is None:
+        return None
+    appearance = getattr(advertisement, "appearance", None)
+    if isinstance(appearance, int):
+        return appearance
+
+    def find_appearance(value: Any) -> int | None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if str(key).lower() == "appearance" and isinstance(child, int):
+                    return child
+                found = find_appearance(child)
+                if found is not None:
+                    return found
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                found = find_appearance(child)
+                if found is not None:
+                    return found
+        return None
+
+    return find_appearance(getattr(advertisement, "platform_data", None))
 
 
 def bytes_to_text(data: bytes | bytearray | None, fmt: ValueFormat) -> str:
@@ -169,6 +307,16 @@ class DiscoveredDevice:
 
 
 @dataclass
+class DescriptorModel:
+    uuid: str
+    handle: int
+    name: str
+    descriptor: BleakGATTDescriptor
+    value: bytes | None = None
+    display_format: ValueFormat = ValueFormat.ASCII
+
+
+@dataclass
 class CharacteristicModel:
     uuid: str
     handle: int
@@ -178,6 +326,7 @@ class CharacteristicModel:
     value: bytes | None = None
     display_format: ValueFormat = ValueFormat.ASCII
     notifying: bool = False
+    descriptors: list[DescriptorModel] = field(default_factory=list)
 
 
 @dataclass
@@ -185,6 +334,7 @@ class ServiceModel:
     uuid: str
     name: str
     characteristics: list[CharacteristicModel] = field(default_factory=list)
+    descriptors: list[DescriptorModel] = field(default_factory=list)
 
 
 class AsyncBleBridge:
@@ -270,11 +420,12 @@ class AsyncBleBridge:
         for service in gatt:
             service_model = ServiceModel(
                 uuid=str(service.uuid),
-                name=friendly_uuid_name(str(service.uuid), "BLE Service"),
+                name=BLUETOOTH_NUMBERS.service_name(str(service.uuid)),
             )
+            characteristic_descriptor_handles: set[int] = set()
             for characteristic in service.characteristics:
                 properties = set(characteristic.properties)
-                name = friendly_uuid_name(str(characteristic.uuid), "BLE Characteristic")
+                name = BLUETOOTH_NUMBERS.characteristic_name(str(characteristic.uuid))
                 model = CharacteristicModel(
                     uuid=str(characteristic.uuid),
                     handle=characteristic.handle,
@@ -290,7 +441,34 @@ class AsyncBleBridge:
                         model.value = bytes(await self.client.read_gatt_char(characteristic))
                     except Exception as exc:
                         model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
+                for descriptor in characteristic.descriptors:
+                    descriptor_model = DescriptorModel(
+                        uuid=str(descriptor.uuid),
+                        handle=descriptor.handle,
+                        name=BLUETOOTH_NUMBERS.descriptor_name(str(descriptor.uuid)),
+                        descriptor=descriptor,
+                    )
+                    try:
+                        descriptor_model.value = bytes(await self.client.read_gatt_descriptor(descriptor.handle))
+                    except Exception as exc:
+                        descriptor_model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
+                    characteristic_descriptor_handles.add(descriptor.handle)
+                    model.descriptors.append(descriptor_model)
                 service_model.characteristics.append(model)
+            for descriptor in getattr(service, "descriptors", []):
+                if descriptor.handle in characteristic_descriptor_handles:
+                    continue
+                descriptor_model = DescriptorModel(
+                    uuid=str(descriptor.uuid),
+                    handle=descriptor.handle,
+                    name=BLUETOOTH_NUMBERS.descriptor_name(str(descriptor.uuid)),
+                    descriptor=descriptor,
+                )
+                try:
+                    descriptor_model.value = bytes(await self.client.read_gatt_descriptor(descriptor.handle))
+                except Exception as exc:
+                    descriptor_model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
+                service_model.descriptors.append(descriptor_model)
             services.append(service_model)
         return services
 
@@ -323,6 +501,23 @@ class AsyncBleBridge:
         self.emit("characteristic_value", (characteristic.handle, data))
         self.emit("toast", "Write complete")
 
+    def read_descriptor(self, descriptor: BleakGATTDescriptor) -> None:
+        self.call(self._read_descriptor(descriptor))
+
+    async def _read_descriptor(self, descriptor: BleakGATTDescriptor) -> None:
+        assert self.client is not None
+        data = bytes(await self.client.read_gatt_descriptor(descriptor.handle))
+        self.emit("descriptor_value", (descriptor.handle, data))
+
+    def write_descriptor(self, descriptor: BleakGATTDescriptor, data: bytes) -> None:
+        self.call(self._write_descriptor(descriptor, data))
+
+    async def _write_descriptor(self, descriptor: BleakGATTDescriptor, data: bytes) -> None:
+        assert self.client is not None
+        await self.client.write_gatt_descriptor(descriptor.handle, data)
+        self.emit("descriptor_value", (descriptor.handle, data))
+        self.emit("toast", "Descriptor write complete")
+
     def toggle_notify(self, characteristic: BleakGATTCharacteristic, enable: bool) -> None:
         self.call(self._toggle_notify(characteristic, enable))
 
@@ -348,21 +543,21 @@ class AsyncBleBridge:
 
 
 class WriteDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Tk, characteristic: CharacteristicModel, on_write: Callable[[bytes], None]) -> None:
+    def __init__(self, parent: tk.Tk, target: CharacteristicModel | DescriptorModel, on_write: Callable[[bytes], None]) -> None:
         super().__init__(parent)
-        self.characteristic = characteristic
+        self.target = target
         self.on_write = on_write
-        self.title(f"Write {characteristic.name}")
+        self.title(f"Write {target.name}")
         self.configure(bg=COLORS["panel"])
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
 
-        self.format_var = tk.StringVar(value=characteristic.display_format.value)
-        self.value_var = tk.StringVar(value=bytes_to_text(characteristic.value, characteristic.display_format))
+        self.format_var = tk.StringVar(value=target.display_format.value)
+        self.value_var = tk.StringVar(value=bytes_to_text(target.value, target.display_format))
 
-        ttk.Label(self, text=characteristic.name, style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", padx=18, pady=(18, 4))
-        ttk.Label(self, text=characteristic.uuid, style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 14))
+        ttk.Label(self, text=target.name, style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", padx=18, pady=(18, 4))
+        ttk.Label(self, text=target.uuid, style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 14))
         ttk.Label(self, text="Format").grid(row=2, column=0, sticky="w", padx=18, pady=6)
         format_box = ttk.Combobox(self, values=FORMAT_LABELS, textvariable=self.format_var, state="readonly", width=18)
         format_box.grid(row=2, column=1, sticky="ew", padx=18, pady=6)
@@ -400,10 +595,12 @@ class BleDebuggerApp(tk.Tk):
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.bridge = AsyncBleBridge(self._emit)
         self.devices: dict[str, DiscoveredDevice] = {}
-        self.device_rows: dict[str, str] = {}
+        self.device_cards: dict[str, dict[str, Any]] = {}
         self.services: list[ServiceModel] = []
         self.characteristics_by_handle: dict[int, CharacteristicModel] = {}
+        self.descriptors_by_handle: dict[int, DescriptorModel] = {}
         self.char_widgets: dict[int, dict[str, Any]] = {}
+        self.descriptor_widgets: dict[int, dict[str, Any]] = {}
         self.scan_running = False
         self.connected = False
         self.selected_address: str | None = None
@@ -487,16 +684,15 @@ class BleDebuggerApp(tk.Tk):
         self.connect_button = ttk.Button(left_header, text="Connect + GATT", command=self._connect_selected, style="Ghost.TButton", state="disabled")
         self.connect_button.pack(side="right")
 
-        columns = ("name", "last", "rssi")
-        self.device_tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse")
-        self.device_tree.heading("name", text="Device")
-        self.device_tree.heading("last", text="Last adv")
-        self.device_tree.heading("rssi", text="RSSI")
-        self.device_tree.column("name", width=210, anchor="w")
-        self.device_tree.column("last", width=84, anchor="center")
-        self.device_tree.column("rssi", width=112, anchor="center")
-        self.device_tree.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self.device_tree.bind("<<TreeviewSelect>>", self._on_device_selected)
+        self.device_canvas = tk.Canvas(left, bg=COLORS["panel"], highlightthickness=0)
+        self.device_canvas.pack(side="left", fill="both", expand=True, padx=(14, 0), pady=(0, 14))
+        device_scrollbar = ttk.Scrollbar(left, orient="vertical", command=self.device_canvas.yview)
+        device_scrollbar.pack(side="right", fill="y", padx=(0, 14), pady=(0, 14))
+        self.device_canvas.configure(yscrollcommand=device_scrollbar.set)
+        self.device_frame = ttk.Frame(self.device_canvas, style="Panel.TFrame")
+        self.device_canvas_window = self.device_canvas.create_window((0, 0), window=self.device_frame, anchor="nw")
+        self.device_frame.bind("<Configure>", lambda _: self.device_canvas.configure(scrollregion=self.device_canvas.bbox("all")))
+        self.device_canvas.bind("<Configure>", lambda event: self.device_canvas.itemconfigure(self.device_canvas_window, width=event.width))
 
         gatt_header = ttk.Frame(right, style="Panel.TFrame")
         gatt_header.pack(fill="x", padx=14, pady=(14, 8))
@@ -579,15 +775,23 @@ class BleDebuggerApp(tk.Tk):
         self.connect_button.configure(state="disabled")
         self.bridge.connect(self.selected_address)
 
+    def _connect_device_card(self, address: str) -> None:
+        self._select_device(address)
+        self._connect_selected()
+
     def _disconnect(self) -> None:
         self.bridge.disconnect()
 
-    def _on_device_selected(self, _event: tk.Event) -> None:
-        selection = self.device_tree.selection()
-        if not selection:
-            return
-        self.selected_address = selection[0]
+    def _select_device(self, address: str) -> None:
+        self.selected_address = address
         self.connect_button.configure(state="normal")
+        for card_address, widgets in self.device_cards.items():
+            selected = card_address == address
+            bg = COLORS["panel_3"] if selected else COLORS["panel_2"]
+            border = COLORS["accent"] if selected else COLORS["line"]
+            widgets["frame"].configure(bg=bg, highlightbackground=border)
+            for widget in widgets.get("background_widgets", []):
+                widget.configure(bg=bg)
 
     def _poll_events(self) -> None:
         while True:
@@ -616,6 +820,9 @@ class BleDebuggerApp(tk.Tk):
         elif event == "characteristic_value":
             handle, data = payload
             self._update_characteristic_value(handle, data)
+        elif event == "descriptor_value":
+            handle, data = payload
+            self._update_descriptor_value(handle, data)
         elif event == "notify_state":
             handle, enabled = payload
             self._set_notify_state(handle, enabled)
@@ -632,31 +839,81 @@ class BleDebuggerApp(tk.Tk):
     def _set_status(self, text: str) -> None:
         self.status_label.configure(text=text)
 
+    def _create_device_card(self, address: str) -> dict[str, Any]:
+        frame = tk.Frame(self.device_frame, bg=COLORS["panel_2"], highlightthickness=1, highlightbackground=COLORS["line"], cursor="hand2")
+        frame.pack(fill="x", padx=0, pady=(0, 8))
+        frame.columnconfigure(0, weight=1)
+
+        top = tk.Frame(frame, bg=COLORS["panel_2"])
+        top.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 2))
+        top.columnconfigure(0, weight=1)
+        name = tk.Label(top, text="", bg=COLORS["panel_2"], fg=COLORS["text"], font=("Segoe UI Semibold", 10), anchor="w")
+        name.grid(row=0, column=0, sticky="ew")
+        rssi = tk.Label(top, text="", bg=COLORS["panel_2"], fg=COLORS["accent_2"], font=("Segoe UI", 9), anchor="e")
+        rssi.grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+        address_label = tk.Label(frame, text=address, bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Cascadia Mono", 8), anchor="w")
+        address_label.grid(row=1, column=0, sticky="ew", padx=12)
+
+        meta = tk.Frame(frame, bg=COLORS["panel_2"])
+        meta.grid(row=2, column=0, sticky="ew", padx=12, pady=(6, 10))
+        meta.columnconfigure(0, weight=1)
+        company = tk.Label(meta, text="", bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w", wraplength=270, justify="left")
+        company.grid(row=0, column=0, sticky="ew")
+        appearance = tk.Label(meta, text="", bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w", wraplength=270, justify="left")
+        appearance.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        last = tk.Label(meta, text="", bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="e")
+        last.grid(row=0, column=1, rowspan=2, sticky="ne", padx=(8, 0))
+
+        background_widgets = [top, meta, name, rssi, address_label, company, appearance, last]
+        for widget in [frame, *background_widgets]:
+            widget.bind("<Button-1>", lambda _event, selected=address: self._select_device(selected))
+            widget.bind("<Double-Button-1>", lambda _event, selected=address: self._connect_device_card(selected))
+
+        return {
+            "frame": frame,
+            "name": name,
+            "address": address_label,
+            "last": last,
+            "rssi": rssi,
+            "company": company,
+            "appearance": appearance,
+            "background_widgets": background_widgets,
+        }
+
     def _upsert_device(self, record: DiscoveredDevice) -> None:
         self.devices[record.address] = record
-        values = (
-            f"{record.name}  ({record.address})",
-            format_elapsed(time.time() - record.last_seen),
-            f"{signal_icon(record.rssi)}  {record.rssi if record.rssi is not None else '--'} dBm",
-        )
-        if record.address in self.device_rows:
-            self.device_tree.item(record.address, values=values)
-        else:
-            self.device_rows[record.address] = record.address
-            self.device_tree.insert("", "end", iid=record.address, values=values)
+        company_text = ", ".join(manufacturer_names(record.advertisement)) or "Company unknown"
+        appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or "Appearance unknown"
+        rssi_text = f"{signal_icon(record.rssi)}  {record.rssi if record.rssi is not None else '--'} dBm"
+        last_text = format_elapsed(time.time() - record.last_seen)
+
+        if record.address not in self.device_cards:
+            self.device_cards[record.address] = self._create_device_card(record.address)
+
+        widgets = self.device_cards[record.address]
+        widgets["name"].configure(text=record.name)
+        widgets["address"].configure(text=record.address)
+        widgets["last"].configure(text=last_text)
+        widgets["rssi"].configure(text=rssi_text)
+        widgets["company"].configure(text=company_text)
+        widgets["appearance"].configure(text=appearance)
 
     def _tick_elapsed(self) -> None:
         now = time.time()
         for address, record in self.devices.items():
-            if address in self.device_rows:
-                self.device_tree.set(address, "last", format_elapsed(now - record.last_seen))
+            widgets = self.device_cards.get(address)
+            if widgets:
+                widgets["last"].configure(text=format_elapsed(now - record.last_seen))
         self.after(1000, self._tick_elapsed)
 
     def _clear_gatt(self) -> None:
         for child in self.gatt_frame.winfo_children():
             child.destroy()
         self.characteristics_by_handle.clear()
+        self.descriptors_by_handle.clear()
         self.char_widgets.clear()
+        self.descriptor_widgets.clear()
 
     def _render_services(self, services: list[ServiceModel]) -> None:
         self.services = services
@@ -693,6 +950,8 @@ class BleDebuggerApp(tk.Tk):
 
         for characteristic in service.characteristics:
             self._render_characteristic(content, characteristic)
+        for descriptor in service.descriptors:
+            self._render_descriptor(content, descriptor, indent=0)
 
     def _render_characteristic(self, parent: ttk.Frame, characteristic: CharacteristicModel) -> None:
         self.characteristics_by_handle[characteristic.handle] = characteristic
@@ -704,7 +963,12 @@ class BleDebuggerApp(tk.Tk):
         row.columnconfigure(0, weight=1)
         row.columnconfigure(1, minsize=300)
 
-        tk.Label(left, text=characteristic.name, bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI Semibold", 10), anchor="w").pack(anchor="w")
+        name_row = tk.Frame(left, bg=COLORS["panel"])
+        name_row.pack(anchor="w", fill="x")
+        descriptor_triangle = tk.Label(name_row, text=">" if characteristic.descriptors else " ", bg=COLORS["panel"], fg=COLORS["accent"], width=2, font=("Segoe UI", 9))
+        descriptor_triangle.pack(side="left")
+        name_label = tk.Label(name_row, text=characteristic.name, bg=COLORS["panel"], fg=COLORS["text"], font=("Segoe UI Semibold", 10), anchor="w")
+        name_label.pack(side="left", fill="x", expand=True)
         prop_text = "  ".join(sorted(characteristic.properties)) or "no properties"
         tk.Label(left, text=f"{characteristic.uuid}  •  {prop_text}", bg=COLORS["panel"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w").pack(anchor="w", pady=(3, 0))
 
@@ -735,7 +999,57 @@ class BleDebuggerApp(tk.Tk):
         else:
             notify_button = None
 
+        descriptor_content = ttk.Frame(parent, style="Panel.TFrame")
+
+        def toggle_descriptors() -> None:
+            if not characteristic.descriptors:
+                return
+            if descriptor_content.winfo_ismapped():
+                descriptor_content.pack_forget()
+                descriptor_triangle.configure(text=">")
+            else:
+                descriptor_content.pack(fill="x", after=row)
+                descriptor_triangle.configure(text="v")
+
+        if characteristic.descriptors:
+            for widget in (name_row, descriptor_triangle, name_label):
+                widget.bind("<Button-1>", lambda _event: toggle_descriptors())
+            for descriptor in characteristic.descriptors:
+                self._render_descriptor(descriptor_content, descriptor, indent=28)
+
         self.char_widgets[characteristic.handle] = {"value": value, "notify": notify_button}
+
+    def _render_descriptor(self, parent: ttk.Frame, descriptor: DescriptorModel, indent: int) -> None:
+        self.descriptors_by_handle[descriptor.handle] = descriptor
+        row = tk.Frame(parent, bg=COLORS["panel_2"], highlightthickness=1, highlightbackground=COLORS["line"])
+        row.pack(fill="x", padx=(indent, 0), pady=(4, 0))
+        row.columnconfigure(0, weight=1)
+        row.columnconfigure(1, minsize=260)
+
+        left = tk.Frame(row, bg=COLORS["panel_2"])
+        left.grid(row=0, column=0, sticky="nsew", padx=12, pady=8)
+        tk.Label(left, text=descriptor.name, bg=COLORS["panel_2"], fg=COLORS["text"], font=("Segoe UI Semibold", 9), anchor="w").pack(anchor="w")
+        tk.Label(left, text=descriptor.uuid, bg=COLORS["panel_2"], fg=COLORS["muted"], font=("Segoe UI", 8), anchor="w").pack(anchor="w", pady=(2, 0))
+
+        right = tk.Frame(row, bg=COLORS["panel_2"])
+        right.grid(row=0, column=1, sticky="e", padx=12, pady=8)
+        value = tk.Label(
+            right,
+            text=bytes_to_text(descriptor.value, descriptor.display_format) or "unread",
+            bg=COLORS["panel"],
+            fg=COLORS["accent_2"],
+            font=("Cascadia Mono", 9),
+            padx=10,
+            pady=6,
+            width=24,
+            anchor="e",
+        )
+        value.pack(side="left", padx=(0, 8))
+        value.bind("<Button-3>", lambda event, handle=descriptor.handle: self._show_descriptor_format_menu(event, handle))
+
+        ttk.Button(right, text="Read", command=lambda desc=descriptor: self.bridge.read_descriptor(desc.descriptor), style="Ghost.TButton").pack(side="left", padx=3)
+        ttk.Button(right, text="Write", command=lambda desc=descriptor: self._open_descriptor_write_dialog(desc), style="Accent.TButton").pack(side="left", padx=3)
+        self.descriptor_widgets[descriptor.handle] = {"value": value}
 
     def _show_format_menu(self, event: tk.Event, handle: int) -> None:
         characteristic = self.characteristics_by_handle[handle]
@@ -744,10 +1058,21 @@ class BleDebuggerApp(tk.Tk):
             menu.add_command(label=fmt.value, command=lambda chosen=fmt: self._set_characteristic_format(handle, chosen))
         menu.tk_popup(event.x_root, event.y_root)
 
+    def _show_descriptor_format_menu(self, event: tk.Event, handle: int) -> None:
+        menu = tk.Menu(self, tearoff=False, bg=COLORS["panel_2"], fg=COLORS["text"], activebackground=COLORS["accent"], activeforeground="#061018")
+        for fmt in ValueFormat:
+            menu.add_command(label=fmt.value, command=lambda chosen=fmt: self._set_descriptor_format(handle, chosen))
+        menu.tk_popup(event.x_root, event.y_root)
+
     def _set_characteristic_format(self, handle: int, fmt: ValueFormat) -> None:
         characteristic = self.characteristics_by_handle[handle]
         characteristic.display_format = fmt
         self._refresh_characteristic_label(handle)
+
+    def _set_descriptor_format(self, handle: int, fmt: ValueFormat) -> None:
+        descriptor = self.descriptors_by_handle[handle]
+        descriptor.display_format = fmt
+        self._refresh_descriptor_label(handle)
 
     def _refresh_characteristic_label(self, handle: int) -> None:
         characteristic = self.characteristics_by_handle[handle]
@@ -755,12 +1080,25 @@ class BleDebuggerApp(tk.Tk):
         if widgets:
             widgets["value"].configure(text=bytes_to_text(characteristic.value, characteristic.display_format) or "unread")
 
+    def _refresh_descriptor_label(self, handle: int) -> None:
+        descriptor = self.descriptors_by_handle[handle]
+        widgets = self.descriptor_widgets.get(handle)
+        if widgets:
+            widgets["value"].configure(text=bytes_to_text(descriptor.value, descriptor.display_format) or "unread")
+
     def _update_characteristic_value(self, handle: int, data: bytes) -> None:
         characteristic = self.characteristics_by_handle.get(handle)
         if not characteristic:
             return
         characteristic.value = data
         self._refresh_characteristic_label(handle)
+
+    def _update_descriptor_value(self, handle: int, data: bytes) -> None:
+        descriptor = self.descriptors_by_handle.get(handle)
+        if not descriptor:
+            return
+        descriptor.value = data
+        self._refresh_descriptor_label(handle)
 
     def _set_notify_state(self, handle: int, enabled: bool) -> None:
         characteristic = self.characteristics_by_handle.get(handle)
@@ -776,6 +1114,9 @@ class BleDebuggerApp(tk.Tk):
 
     def _open_write_dialog(self, characteristic: CharacteristicModel) -> None:
         WriteDialog(self, characteristic, lambda data: self.bridge.write_characteristic(characteristic.characteristic, data))
+
+    def _open_descriptor_write_dialog(self, descriptor: DescriptorModel) -> None:
+        WriteDialog(self, descriptor, lambda data: self.bridge.write_descriptor(descriptor.descriptor, data))
 
 
 def main() -> None:
