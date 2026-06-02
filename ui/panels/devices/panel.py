@@ -11,6 +11,7 @@ from helpers.formatting import format_elapsed
 from models import DiscoveredDevice
 from ui.panels.devices.device_card import create_device_card, update_device_card
 from ui.panels.devices.header import build_devices_header
+from ui.resize_visibility import handle_canvas_resize
 from ui.scrolling import bind_canvas_mousewheel
 
 
@@ -25,7 +26,7 @@ def build_devices_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     app.device_frame = ttk.Frame(app.device_canvas, style="Panel.TFrame")
     app.device_canvas_window = app.device_canvas.create_window((0, 0), window=app.device_frame, anchor="nw")
     app.device_frame.bind("<Configure>", lambda _: app.device_canvas.configure(scrollregion=app.device_canvas.bbox("all")))
-    app.device_canvas.bind("<Configure>", lambda event: app.device_canvas.itemconfigure(app.device_canvas_window, width=event.width))
+    app.device_canvas.bind("<Configure>", lambda event: handle_canvas_resize(app, app.device_canvas, app.device_canvas_window, event.width))
     bind_canvas_mousewheel(app.device_canvas)
 
 
@@ -45,7 +46,7 @@ def upsert_device(app: tk.Tk, record: DiscoveredDevice) -> None:
     app.devices[record.address] = record
     if record.address not in app.device_cards:
         app.device_cards[record.address] = create_device_card(app, record.address)
-    update_device_card(app.device_cards[record.address], record, format_elapsed(time.time() - record.last_seen))
+    update_device_card(app, app.device_cards[record.address], record, format_elapsed(time.time() - record.last_seen))
 
 
 def tick_elapsed(app: tk.Tk) -> None:

@@ -9,6 +9,7 @@ from ui.panels.gatt.characteristic_card import render_characteristic_card
 from ui.panels.gatt.descriptor_card import render_descriptor_card
 from ui.panels.gatt.header import build_gatt_header
 from ui.panels.gatt.service_header import render_service_header
+from ui.resize_visibility import handle_canvas_resize
 from ui.scrolling import bind_canvas_mousewheel
 
 
@@ -23,7 +24,7 @@ def build_gatt_panel(app: tk.Tk, parent: ttk.Frame) -> None:
     app.gatt_frame = ttk.Frame(app.canvas, style="Panel.TFrame")
     app.canvas_window = app.canvas.create_window((0, 0), window=app.gatt_frame, anchor="nw")
     app.gatt_frame.bind("<Configure>", lambda _: app.canvas.configure(scrollregion=app.canvas.bbox("all")))
-    app.canvas.bind("<Configure>", lambda event: app.canvas.itemconfigure(app.canvas_window, width=event.width))
+    app.canvas.bind("<Configure>", lambda event: handle_canvas_resize(app, app.canvas, app.canvas_window, event.width))
     bind_canvas_mousewheel(app.canvas)
 
 
@@ -45,7 +46,7 @@ def render_services(app: tk.Tk, services: list[ServiceModel]) -> None:
 
 
 def render_service(app: tk.Tk, service: ServiceModel) -> None:
-    content = render_service_header(app.gatt_frame, service)
+    content = render_service_header(app, app.gatt_frame, service)
     for characteristic in service.characteristics:
         render_characteristic_card(app, content, characteristic)
     for descriptor in service.descriptors:

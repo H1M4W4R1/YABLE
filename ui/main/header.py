@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from config import COLORS
+from ui.icons import configure_icon_button, icon, icon_label
 
 
 def build_main_header(app: tk.Tk) -> None:
@@ -15,13 +16,9 @@ def build_main_header(app: tk.Tk) -> None:
     chrome.bind("<ButtonPress-1>", app._begin_window_drag)
     chrome.bind("<B1-Motion>", app._drag_window)
 
-    logo = tk.Canvas(chrome, width=42, height=28, bg=COLORS["bg"], highlightthickness=0)
+    logo_image = icon(app, "bluetooth-b", COLORS["accent"], 20, scale_to="height")
+    logo = tk.Label(chrome, image=logo_image, text="BT" if logo_image is None else "", bg=COLORS["bg"], fg=COLORS["accent"], font=("Segoe UI Semibold", 11))
     logo.pack(side="left", padx=(16, 4), pady=5)
-    logo.create_oval(5, 7, 19, 21, outline=COLORS["accent"], width=2)
-    logo.create_oval(20, 7, 34, 21, outline=COLORS["accent_2"], width=2)
-    logo.create_line(15, 14, 24, 14, fill=COLORS["text"], width=2)
-    logo.create_line(28, 7, 34, 14, fill=COLORS["accent_2"], width=2)
-    logo.create_line(28, 21, 34, 14, fill=COLORS["accent_2"], width=2)
     logo.bind("<ButtonPress-1>", app._begin_window_drag)
     logo.bind("<B1-Motion>", app._drag_window)
 
@@ -32,18 +29,26 @@ def build_main_header(app: tk.Tk) -> None:
 
     window_controls = tk.Frame(chrome, bg=COLORS["bg"])
     window_controls.pack(side="right", padx=(0, 8))
-    make_window_button(window_controls, "-", app._minimize_window).pack(side="left")
-    app.maximize_button = make_window_button(window_controls, "[]", app._toggle_maximize)
+    make_window_button(app, window_controls, "window-minimize", "-", app._minimize_window).pack(side="left")
+    app.maximize_button = make_window_button(app, window_controls, "window-maximize", "[]", app._toggle_maximize)
+    app.maximize_icon = icon(app, "window-maximize", COLORS["muted"], 20)
+    app.restore_icon = icon(app, "window-restore", COLORS["muted"], 20)
+    if app.maximize_icon is not None:
+        app.maximize_button.configure(image=app.maximize_icon, text="")
     app.maximize_button.pack(side="left")
-    make_window_button(window_controls, "X", app.destroy, danger=True).pack(side="left")
+    make_window_button(app, window_controls, "xmark", "X", app.destroy, danger=True).pack(side="left")
 
 
-def make_window_button(parent: tk.Frame, text: str, command: Callable[[], None], danger: bool = False) -> tk.Label:
-    label = tk.Label(
+def make_window_button(app: tk.Tk, parent: tk.Frame, icon_name: str, text: str, command: Callable[[], None], danger: bool = False) -> tk.Label:
+    label = icon_label(
+        app,
         parent,
-        text=text,
-        width=4,
-        height=1,
+        icon_name,
+        COLORS["danger"] if danger else COLORS["muted"],
+        20,
+        text,
+        width=42,
+        height=28,
         bg=COLORS["bg"],
         fg=COLORS["danger"] if danger else COLORS["muted"],
         font=("Segoe UI Semibold", 12),

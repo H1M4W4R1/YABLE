@@ -46,6 +46,8 @@ class BleDebuggerApp(tk.Tk):
         self._resize_start_y = 0
         self._resize_start_width = 0
         self._resize_start_height = 0
+        self._panel_resize_active = False
+        self._panel_resize_restore_job: str | None = None
 
         self._configure_styles()
         self._build_layout()
@@ -117,14 +119,20 @@ class BleDebuggerApp(tk.Tk):
         if self._is_maximized:
             self.geometry(self._normal_geometry)
             self._is_maximized = False
-            self.maximize_button.configure(text="[]")
+            if getattr(self, "maximize_icon", None) is None:
+                self.maximize_button.configure(text="[]")
+            else:
+                self.maximize_button.configure(image=self.maximize_icon, text="")
             return
         self._normal_geometry = self.geometry()
         width = self.winfo_screenwidth()
         height = self.winfo_screenheight()
         self.geometry(f"{width}x{height}+0+0")
         self._is_maximized = True
-        self.maximize_button.configure(text="[ ]")
+        if getattr(self, "restore_icon", None) is None:
+            self.maximize_button.configure(text="[ ]")
+        else:
+            self.maximize_button.configure(image=self.restore_icon, text="")
 
     def _toggle_scan(self) -> None:
         if self.scan_running:

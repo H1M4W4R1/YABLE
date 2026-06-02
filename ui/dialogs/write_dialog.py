@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from config import COLORS
 from helpers.formatting import FORMAT_LABELS, ValueFormat, bytes_to_text, text_to_bytes
 from models import CharacteristicModel, DescriptorModel
+from ui.icons import configure_icon_button
 
 
 class WriteDialog(tk.Toplevel):
@@ -47,8 +48,12 @@ class WriteDialog(tk.Toplevel):
 
         button_row = ttk.Frame(self, style="Panel.TFrame")
         button_row.grid(row=4, column=0, columnspan=2, sticky="e", padx=18, pady=(12, 18))
-        ttk.Button(button_row, text="Cancel", command=self.destroy, style="Ghost.TButton").pack(side="left", padx=(0, 8))
-        ttk.Button(button_row, text="Write", command=self._write, style="Accent.TButton").pack(side="left")
+        cancel_button = ttk.Button(button_row, text="Cancel", command=self.destroy, style="Ghost.TButton")
+        configure_icon_button(self, cancel_button, "xmark", COLORS["text"])
+        cancel_button.pack(side="left", padx=(0, 8))
+        write_button = ttk.Button(button_row, text="Write", command=self._write, style="Accent.TButton")
+        configure_icon_button(self, write_button, "pen-to-square", "#061018")
+        write_button.pack(side="left")
 
     def _write(self) -> None:
         try:

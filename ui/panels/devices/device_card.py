@@ -7,8 +7,9 @@ import tkinter as tk
 from config import COLORS
 from helpers.advertising import extract_gap_appearance, manufacturer_names
 from helpers.data.uuids import BLUETOOTH_NUMBERS
-from helpers.formatting import format_elapsed, signal_icon
+from helpers.formatting import signal_icon
 from models import DiscoveredDevice
+from ui.icons import icon
 
 
 def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
@@ -54,7 +55,7 @@ def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
     }
 
 
-def update_device_card(widgets: dict[str, Any], record: DiscoveredDevice, last_text: str) -> None:
+def update_device_card(app: tk.Tk, widgets: dict[str, Any], record: DiscoveredDevice, last_text: str) -> None:
     company_text = ", ".join(manufacturer_names(record.advertisement)) or "Company unknown"
     appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or "Appearance unknown"
     rssi_text = f"{signal_icon(record.rssi)}  {record.rssi if record.rssi is not None else '--'} dBm"
@@ -62,6 +63,10 @@ def update_device_card(widgets: dict[str, Any], record: DiscoveredDevice, last_t
     widgets["name"].configure(text=record.name)
     widgets["address"].configure(text=record.address)
     widgets["last"].configure(text=last_text)
-    widgets["rssi"].configure(text=rssi_text)
+    signal_image = icon(app, "signal", COLORS["accent_2"], 12)
+    if signal_image is None:
+        widgets["rssi"].configure(text=rssi_text)
+    else:
+        widgets["rssi"].configure(image=signal_image, text=f" {record.rssi if record.rssi is not None else '--'} dBm", compound="left")
     widgets["company"].configure(text=company_text)
     widgets["appearance"].configure(text=appearance)

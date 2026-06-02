@@ -8,6 +8,7 @@ from tkinter import ttk
 from config import COLORS
 from helpers.formatting import bytes_to_text
 from models import DescriptorModel
+from ui.icons import configure_icon_button
 
 
 def render_descriptor_card(app: tk.Tk, parent: ttk.Frame, descriptor: DescriptorModel, indent: int) -> None:
@@ -38,6 +39,10 @@ def render_descriptor_card(app: tk.Tk, parent: ttk.Frame, descriptor: Descriptor
     value.pack(side="left", padx=(0, 8))
     value.bind("<Button-3>", lambda event, handle=descriptor.handle: app._show_descriptor_format_menu(event, handle))
 
-    ttk.Button(right, text="Read", command=lambda desc=descriptor: app.bridge.read_descriptor(desc.descriptor), style="Ghost.TButton").pack(side="left", padx=3)
-    ttk.Button(right, text="Write", command=lambda desc=descriptor: app._open_descriptor_write_dialog(desc), style="Accent.TButton").pack(side="left", padx=3)
+    read_button = ttk.Button(right, text="Read", command=lambda desc=descriptor: app.bridge.read_descriptor(desc.descriptor), style="Ghost.TButton")
+    configure_icon_button(app, read_button, "rotate-right", COLORS["text"])
+    read_button.pack(side="left", padx=3)
+    write_button = ttk.Button(right, text="Write", command=lambda desc=descriptor: app._open_descriptor_write_dialog(desc), style="Accent.TButton")
+    configure_icon_button(app, write_button, "pen-to-square", "#061018")
+    write_button.pack(side="left", padx=3)
     app.descriptor_widgets[descriptor.handle] = {"value": value}
