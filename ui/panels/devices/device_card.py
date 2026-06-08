@@ -60,8 +60,8 @@ def create_device_card(app: tk.Tk, address: str) -> dict[str, Any]:
 
 
 def update_device_card(app: tk.Tk, widgets: dict[str, Any], record: DiscoveredDevice, last_text: str) -> None:
-    company_text = ", ".join(manufacturer_names(record.advertisement)) or "Company unknown"
-    appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or "Appearance unknown"
+    company_text = ", ".join(manufacturer_names(record.advertisement))
+    appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or ""
     rssi_text = f"{signal_icon(record.rssi)}  {record.rssi if record.rssi is not None else '--'} dBm"
 
     widgets["name"].configure(text=record.name)
@@ -73,4 +73,12 @@ def update_device_card(app: tk.Tk, widgets: dict[str, Any], record: DiscoveredDe
     else:
         widgets["rssi"].configure(image=signal_image, text=f" {record.rssi if record.rssi is not None else '--'} dBm", compound="left")
     widgets["company"].configure(text=company_text)
+    if company_text:
+        widgets["company"].grid()
+    else:
+        widgets["company"].grid_remove()
     widgets["appearance"].configure(text=appearance)
+    if appearance:
+        widgets["appearance"].grid()
+    else:
+        widgets["appearance"].grid_remove()

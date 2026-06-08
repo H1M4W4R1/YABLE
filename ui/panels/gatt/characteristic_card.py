@@ -46,7 +46,7 @@ def render_characteristic_card(app: tk.Tk, parent: ttk.Frame, characteristic: Ch
 
     value = tk.Label(
         right,
-        text=bytes_to_text(characteristic.value, characteristic.display_format) or "unread",
+        text=bytes_to_text(characteristic.value, characteristic.display_format, characteristic.display_endian) or "unread",
         bg=COLORS["panel_2"],
         fg=COLORS["accent_2"],
         font=("Cascadia Mono", 9),

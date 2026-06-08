@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ble.dependencies import AdvertisementData, BLEDevice, BleakGATTCharacteristic, BleakGATTDescriptor
-from helpers.formatting import ValueFormat
+from helpers.formatting import ValueEndian, ValueFormat
 
 
 @dataclass
@@ -24,6 +24,7 @@ class DescriptorModel:
     descriptor: BleakGATTDescriptor
     value: bytes | None = None
     display_format: ValueFormat = ValueFormat.ASCII
+    display_endian: ValueEndian = ValueEndian.LITTLE
 
 
 @dataclass
@@ -35,6 +36,7 @@ class CharacteristicModel:
     characteristic: BleakGATTCharacteristic
     value: bytes | None = None
     display_format: ValueFormat = ValueFormat.ASCII
+    display_endian: ValueEndian = ValueEndian.LITTLE
     notifying: bool = False
     hidden: bool = False
     descriptors: list[DescriptorModel] = field(default_factory=list)

@@ -31,7 +31,7 @@ from ble.bridge import AsyncBleBridge
 from config import APP_TITLE, COLORS
 from helpers.advertising import extract_gap_appearance, manufacturer_names
 from helpers.data.uuids import BLUETOOTH_NUMBERS
-from helpers.formatting import FORMAT_LABELS, ValueFormat, bytes_to_text, format_elapsed, signal_icon, text_to_bytes
+from helpers.formatting import FORMAT_LABELS, ValueEndian, ValueFormat, bytes_to_text, format_elapsed, signal_icon, text_to_bytes
 from models import CharacteristicModel, DescriptorModel, DiscoveredDevice, ServiceModel
 
 try:
@@ -102,6 +102,7 @@ class ClickableFrame(QFrame):
 
 class ValueLabel(QLabel):
     format_requested = pyqtSignal(object)
+    endian_requested = pyqtSignal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -116,6 +117,11 @@ class ValueLabel(QLabel):
         for fmt in ValueFormat:
             action = QAction(fmt.value, self)
             action.triggered.connect(lambda _checked=False, chosen=fmt: self.format_requested.emit(chosen))
+            menu.addAction(action)
+        menu.addSeparator()
+        for endian in ValueEndian:
+            action = QAction(f"Endian: {endian.value}", self)
+            action.triggered.connect(lambda _checked=False, chosen=endian: self.endian_requested.emit(chosen))
             menu.addAction(action)
         menu.exec(event.globalPos())
 
@@ -233,7 +239,7 @@ class WriteDialog(QDialog):
         self.editor = QTextEdit()
         self.editor.setObjectName("ValueEditor")
         self.editor.setMinimumHeight(120)
-        self.editor.setPlainText(bytes_to_text(target.value, target.display_format))
+        self.editor.setPlainText(bytes_to_text(target.value, target.display_format, target.display_endian))
 
         row = QHBoxLayout()
         row.addWidget(QLabel("Format"))
@@ -261,7 +267,13 @@ class WriteDialog(QDialog):
 
     def _write(self) -> None:
         try:
-            data = text_to_bytes(self.editor.toPlainText().strip(), ValueFormat(self.format_box.currentText()))
+            byte_length = len(self.target.value) if self.target.value else None
+            data = text_to_bytes(
+                self.editor.toPlainText().strip(),
+                ValueFormat(self.format_box.currentText()),
+                self.target.display_endian,
+                byte_length,
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Invalid value", str(exc))
             return
@@ -317,13 +329,15 @@ class DeviceCard(ClickableFrame):
         self.set_selected(False, False)
 
     def update_record(self, record: DiscoveredDevice, last_text: str) -> None:
-        company_text = ", ".join(manufacturer_names(record.advertisement)) or "Company unknown"
-        appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or "Appearance unknown"
+        company_text = ", ".join(manufacturer_names(record.advertisement))
+        appearance = BLUETOOTH_NUMBERS.appearance_name(extract_gap_appearance(record.advertisement)) or ""
         rssi = record.rssi if record.rssi is not None else "--"
         self.name_label.setText(record.name)
         self.address_label.setText(record.address)
         self.company_label.setText(company_text)
+        self.company_label.setVisible(bool(company_text))
         self.appearance_label.setText(appearance)
+        self.appearance_label.setVisible(bool(appearance))
         self.last_label.setText(last_text)
         self.rssi_label.setText(f"{signal_icon(record.rssi)}  {rssi} dBm")
 
@@ -364,6 +378,7 @@ class DescriptorCard(QFrame):
 
         self.value_label = ValueLabel()
         self.value_label.format_requested.connect(lambda fmt: self.app.set_descriptor_format(descriptor.handle, fmt))
+        self.value_label.endian_requested.connect(lambda endian: self.app.set_descriptor_endian(descriptor.handle, endian))
         read_button = QPushButton("Read")
         read_button.setObjectName("GhostButton")
         set_button_icon(read_button, "fa5s.sync-alt", COLORS["text"])
@@ -384,7 +399,7 @@ class DescriptorCard(QFrame):
         self.refresh_value()
 
     def refresh_value(self) -> None:
-        self.value_label.setText(bytes_to_text(self.descriptor.value, self.descriptor.display_format) or "unread")
+        self.value_label.setText(bytes_to_text(self.descriptor.value, self.descriptor.display_format, self.descriptor.display_endian) or "unread")
 
 
 class CharacteristicCard(QFrame):
@@ -426,6 +441,7 @@ class CharacteristicCard(QFrame):
 
         self.value_label = ValueLabel()
         self.value_label.format_requested.connect(lambda fmt: self.app.set_characteristic_format(characteristic.handle, fmt))
+        self.value_label.endian_requested.connect(lambda endian: self.app.set_characteristic_endian(characteristic.handle, endian))
 
         actions = QHBoxLayout()
         actions.addWidget(self.value_label)
@@ -476,7 +492,7 @@ class CharacteristicCard(QFrame):
         set_disclosure_icon(self.toggle_button, visible)
 
     def refresh_value(self) -> None:
-        self.value_label.setText(bytes_to_text(self.characteristic.value, self.characteristic.display_format) or "unread")
+        self.value_label.setText(bytes_to_text(self.characteristic.value, self.characteristic.display_format, self.characteristic.display_endian) or "unread")
 
     def refresh_notify(self) -> None:
         if self.notify_button is not None:
@@ -996,9 +1012,23 @@ class BleDebuggerWindow(QMainWindow):
         if widget is not None:
             widget.refresh_value()
 
+    def set_characteristic_endian(self, handle: int, endian: ValueEndian) -> None:
+        characteristic = self.characteristics_by_handle[handle]
+        characteristic.display_endian = endian
+        widget = self.char_widgets.get(handle)
+        if widget is not None:
+            widget.refresh_value()
+
     def set_descriptor_format(self, handle: int, fmt: ValueFormat) -> None:
         descriptor = self.descriptors_by_handle[handle]
         descriptor.display_format = fmt
+        widget = self.descriptor_widgets.get(handle)
+        if widget is not None:
+            widget.refresh_value()
+
+    def set_descriptor_endian(self, handle: int, endian: ValueEndian) -> None:
+        descriptor = self.descriptors_by_handle[handle]
+        descriptor.display_endian = endian
         widget = self.descriptor_widgets.get(handle)
         if widget is not None:
             widget.refresh_value()

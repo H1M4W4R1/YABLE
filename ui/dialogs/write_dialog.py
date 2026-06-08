@@ -23,7 +23,7 @@ class WriteDialog(tk.Toplevel):
         self.grab_set()
 
         self.format_var = tk.StringVar(value=target.display_format.value)
-        self.value_var = tk.StringVar(value=bytes_to_text(target.value, target.display_format))
+        self.value_var = tk.StringVar(value=bytes_to_text(target.value, target.display_format, target.display_endian))
 
         ttk.Label(self, text=target.name, style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", padx=18, pady=(18, 4))
         ttk.Label(self, text=target.uuid, style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 14))
@@ -57,7 +57,13 @@ class WriteDialog(tk.Toplevel):
 
     def _write(self) -> None:
         try:
-            data = text_to_bytes(self.entry.get("1.0", "end").strip(), ValueFormat(self.format_var.get()))
+            byte_length = len(self.target.value) if self.target.value else None
+            data = text_to_bytes(
+                self.entry.get("1.0", "end").strip(),
+                ValueFormat(self.format_var.get()),
+                self.target.display_endian,
+                byte_length,
+            )
         except Exception as exc:
             messagebox.showerror("Invalid value", str(exc), parent=self)
             return

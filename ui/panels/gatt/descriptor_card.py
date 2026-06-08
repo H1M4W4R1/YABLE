@@ -27,7 +27,7 @@ def render_descriptor_card(app: tk.Tk, parent: ttk.Frame, descriptor: Descriptor
     right.grid(row=0, column=1, sticky="e", padx=12, pady=8)
     value = tk.Label(
         right,
-        text=bytes_to_text(descriptor.value, descriptor.display_format) or "unread",
+        text=bytes_to_text(descriptor.value, descriptor.display_format, descriptor.display_endian) or "unread",
         bg=COLORS["panel"],
         fg=COLORS["accent_2"],
         font=("Cascadia Mono", 9),
