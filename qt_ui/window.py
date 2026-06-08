@@ -14,10 +14,13 @@ from models import CharacteristicModel, DescriptorModel, DiscoveredDevice, Servi
 from qt_ui.cards.characteristic_card import CharacteristicCard
 from qt_ui.cards.descriptor_card import DescriptorCard
 from qt_ui.cards.device_card import DeviceCard
+from qt_ui.debug_log import DebugLevel, DebugLog
+from qt_ui.dialogs.debug_console import DebugConsole
 from qt_ui.cards.service_section import ServiceSection
 from qt_ui.dialogs.write_dialog import WriteDialog
 from qt_ui.event_bus import BleEventBus
 from qt_ui.icons import app_icon, set_button_icon, set_icon_button_text
+from qt_ui.widgets.status_label import StatusLabel
 from qt_ui.widgets.title_bar import TitleBar
 from qt_ui.widgets.visible_size_grip import VisibleSizeGrip
 
@@ -41,6 +44,10 @@ class BleDebuggerWindow(QMainWindow):
         self.descriptors_by_handle: dict[int, DescriptorModel] = {}
         self.char_widgets: dict[int, CharacteristicCard] = {}
         self.descriptor_widgets: dict[int, DescriptorCard] = {}
+        self.log = DebugLog()
+        self.debug_console: DebugConsole | None = None
+        self.seen_device_addresses: set[str] = set()
+        self.lost_device_addresses: set[str] = set()
         self.scan_running = False
         self.connected = False
         self.selected_address: str | None = None
@@ -73,9 +80,6 @@ class BleDebuggerWindow(QMainWindow):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(8)
-        self.status_label = QLabel("Ready")
-        self.status_label.setObjectName("Status")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.scan_button = QPushButton("Start scan")
         self.scan_button.setObjectName("AccentButton")
         set_button_icon(self.scan_button, "fa5s.play", "#061018")
@@ -91,10 +95,16 @@ class BleDebuggerWindow(QMainWindow):
         self.disconnect_button.setEnabled(False)
         self.disconnect_button.clicked.connect(self.disconnect)
 
-        header.addWidget(self.status_label, 1)
+        header.addStretch(1)
         header.addWidget(self.scan_button)
         header.addWidget(self.connect_button)
         header.addWidget(self.disconnect_button)
+
+        self.status_label = StatusLabel("Ready")
+        self.status_label.setObjectName("Status")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.status_label.double_clicked.connect(self.open_debug_console)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setObjectName("MainSplitter")
@@ -105,6 +115,7 @@ class BleDebuggerWindow(QMainWindow):
 
         content_layout.addLayout(header)
         content_layout.addWidget(splitter, 1)
+        content_layout.addWidget(self.status_label)
         root_layout.addWidget(self.title_bar)
         root_layout.addWidget(content, 1)
         self.resize_grip = VisibleSizeGrip(self)
@@ -226,7 +237,7 @@ class BleDebuggerWindow(QMainWindow):
             }}
             QLabel#Status {{
                 color: {COLORS["muted"]};
-                padding: 0;
+                padding: 2px 4px 0 4px;
             }}
             QLabel#Rssi, QLabel#ValueLabel {{
                 color: {COLORS["accent_2"]};
@@ -388,6 +399,7 @@ class BleDebuggerWindow(QMainWindow):
 
     def handle_event(self, event: str, payload: Any) -> None:
         if event == "missing_dependency":
+            self.add_log(DebugLevel.ERROR, "Missing dependency: bleak")
             self.set_status("Install dependencies with: python -m pip install -r requirements.txt")
             QMessageBox.critical(self, "Missing dependency", "The bleak package is required for BLE access.\n\nRun: python -m pip install -r requirements.txt")
         elif event == "scan_state":
@@ -417,6 +429,7 @@ class BleDebuggerWindow(QMainWindow):
         elif event == "toast":
             self.set_status(str(payload))
         elif event == "disconnected":
+            self.add_log(DebugLevel.WARNING, "Device disconnected")
             self.connected = False
             self.connected_address = None
             self.connecting_address = None
@@ -425,11 +438,28 @@ class BleDebuggerWindow(QMainWindow):
             self.refresh_device_card_states()
             self.set_status("Disconnected")
         elif event == "error":
+            self.add_log(DebugLevel.ERROR, str(payload))
             self.set_status(f"Error: {payload}")
             QMessageBox.critical(self, "BLE error", str(payload))
+        elif event == "log":
+            level, message = payload
+            self.add_log(level, str(message))
 
     def set_status(self, text: str) -> None:
         self.status_label.setText(text)
+
+    def add_log(self, level: DebugLevel, message: str) -> None:
+        entry = self.log.add(level, message)
+        if self.debug_console is not None:
+            self.debug_console.append(entry)
+
+    def open_debug_console(self) -> None:
+        if self.debug_console is None:
+            self.debug_console = DebugConsole(self, self.log)
+            self.debug_console.finished.connect(lambda _result: setattr(self, "debug_console", None))
+        self.debug_console.show()
+        self.debug_console.raise_()
+        self.debug_console.activateWindow()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -443,6 +473,14 @@ class BleDebuggerWindow(QMainWindow):
         grip.raise_()
 
     def upsert_device(self, record: DiscoveredDevice) -> None:
+        is_new = record.address not in self.seen_device_addresses
+        was_lost = record.address in self.lost_device_addresses
+        if is_new:
+            self.seen_device_addresses.add(record.address)
+            self.add_log(DebugLevel.INFO, f"New device detected: {record.name} ({record.address})")
+        elif was_lost:
+            self.lost_device_addresses.discard(record.address)
+            self.add_log(DebugLevel.INFO, f"Device detected again: {record.name} ({record.address})")
         self.devices[record.address] = record
         card = self.device_cards.get(record.address)
         if card is None:
@@ -460,7 +498,11 @@ class BleDebuggerWindow(QMainWindow):
         for address, record in self.devices.items():
             card = self.device_cards.get(address)
             if card is not None:
-                card.last_label.setText(format_elapsed(now - record.last_seen))
+                elapsed = now - record.last_seen
+                card.last_label.setText(format_elapsed(elapsed))
+                if self.scan_running and elapsed > 15 and address not in self.lost_device_addresses:
+                    self.lost_device_addresses.add(address)
+                    self.add_log(DebugLevel.WARNING, f"Device lost: {record.name} ({address})")
 
     def refresh_device_card_states(self) -> None:
         for address, card in self.device_cards.items():

@@ -8,6 +8,7 @@ from typing import Any, Callable
 from ble.dependencies import BleakClient, BleakGATTCharacteristic, BleakGATTDescriptor, BleakScanner, BLEDevice, AdvertisementData
 from helpers.data.uuids import BLUETOOTH_NUMBERS, normalize_uuid
 from models import CharacteristicModel, DescriptorModel, DiscoveredDevice, ServiceModel
+from qt_ui.debug_log import DebugLevel
 
 
 class AsyncBleBridge:
@@ -19,6 +20,9 @@ class AsyncBleBridge:
         self.scanner: BleakScanner | None = None
         self.client: BleakClient | None = None
         self.devices: dict[str, DiscoveredDevice] = {}
+
+    def log(self, level: DebugLevel, message: str) -> None:
+        self.emit("log", (level, message))
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self.loop)
@@ -43,18 +47,22 @@ class AsyncBleBridge:
             return
         if self.scanner:
             return
+        self.log(DebugLevel.INFO, "Starting BLE scan")
         self.scanner = BleakScanner(self._on_detection)
         await self.scanner.start()
         self.emit("scan_state", True)
+        self.log(DebugLevel.INFO, "BLE scan started")
 
     def stop_scan(self) -> None:
         self.call(self._stop_scan())
 
     async def _stop_scan(self) -> None:
         if self.scanner:
+            self.log(DebugLevel.INFO, "Stopping BLE scan")
             await self.scanner.stop()
             self.scanner = None
         self.emit("scan_state", False)
+        self.log(DebugLevel.INFO, "BLE scan stopped")
 
     def _on_detection(self, device: BLEDevice, advertisement_data: AdvertisementData) -> None:
         name = device.name or advertisement_data.local_name or "Unknown Device"
@@ -78,9 +86,11 @@ class AsyncBleBridge:
     async def _connect(self, address: str) -> None:
         await self._stop_scan()
         device = self.devices[address].device
+        self.log(DebugLevel.INFO, f"Connecting to {self.devices[address].name} ({address})")
         self.emit("connection_state", f"Connecting to {self.devices[address].name}...")
         self.client = BleakClient(device, disconnected_callback=lambda _: self.emit("disconnected", None))
         await self.client.connect()
+        self.log(DebugLevel.INFO, f"Connected to {self.devices[address].name} ({address})")
         self.emit("connection_state", "Discovering GATT...")
         services = await self._discover_services()
         self.emit("services", services)
@@ -91,6 +101,7 @@ class AsyncBleBridge:
         services: list[ServiceModel] = []
         gatt = self.client.services
         for service in gatt:
+            self.log(DebugLevel.VERBOSE, f"Discovered service {service.uuid}")
             service_model = ServiceModel(
                 uuid=str(service.uuid),
                 name=BLUETOOTH_NUMBERS.service_name(str(service.uuid)),
@@ -112,8 +123,10 @@ class AsyncBleBridge:
                 if "read" in properties:
                     try:
                         model.value = bytes(await self.client.read_gatt_char(characteristic))
+                        self.log(DebugLevel.VERBOSE, f"Initial read characteristic 0x{characteristic.handle:04x}: {len(model.value)} bytes")
                     except Exception as exc:
                         read_failed = True
+                        self.log(DebugLevel.WARNING, f"Initial read failed for characteristic 0x{characteristic.handle:04x}: {exc}")
                         model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
                 if self._is_service_name_description(user_description):
                     model.hidden = True
@@ -143,7 +156,9 @@ class AsyncBleBridge:
         )
         try:
             descriptor_model.value = bytes(await self.client.read_gatt_descriptor(descriptor.handle))
+            self.log(DebugLevel.VERBOSE, f"Initial read descriptor 0x{descriptor.handle:04x}: {len(descriptor_model.value)} bytes")
         except Exception as exc:
+            self.log(DebugLevel.WARNING, f"Initial read failed for descriptor 0x{descriptor.handle:04x}: {exc}")
             descriptor_model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
         return descriptor_model
 
@@ -154,7 +169,8 @@ class AsyncBleBridge:
                 try:
                     data = await self.client.read_gatt_descriptor(descriptor.handle)
                     return bytes(data).decode("utf-8", errors="replace").strip() or None
-                except Exception:
+                except Exception as exc:
+                    self.log(DebugLevel.VERBOSE, f"User description read failed for descriptor 0x{descriptor.handle:04x}: {exc}")
                     return None
         return None
 
@@ -173,7 +189,9 @@ class AsyncBleBridge:
 
     async def _read_characteristic(self, characteristic: BleakGATTCharacteristic) -> None:
         assert self.client is not None
+        self.log(DebugLevel.VERBOSE, f"Reading characteristic 0x{characteristic.handle:04x}")
         data = bytes(await self.client.read_gatt_char(characteristic))
+        self.log(DebugLevel.INFO, f"Read characteristic 0x{characteristic.handle:04x}: {len(data)} bytes")
         self.emit("characteristic_value", (characteristic.handle, data))
 
     def write_characteristic(self, characteristic: BleakGATTCharacteristic, data: bytes) -> None:
@@ -182,6 +200,7 @@ class AsyncBleBridge:
     async def _write_characteristic(self, characteristic: BleakGATTCharacteristic, data: bytes) -> None:
         assert self.client is not None
         response = "write" in characteristic.properties
+        self.log(DebugLevel.INFO, f"Writing characteristic 0x{characteristic.handle:04x}: {len(data)} bytes")
         await self.client.write_gatt_char(characteristic, data, response=response)
         self.emit("characteristic_value", (characteristic.handle, data))
         self.emit("toast", "Write complete")
@@ -191,7 +210,9 @@ class AsyncBleBridge:
 
     async def _read_descriptor(self, descriptor: BleakGATTDescriptor) -> None:
         assert self.client is not None
+        self.log(DebugLevel.VERBOSE, f"Reading descriptor 0x{descriptor.handle:04x}")
         data = bytes(await self.client.read_gatt_descriptor(descriptor.handle))
+        self.log(DebugLevel.INFO, f"Read descriptor 0x{descriptor.handle:04x}: {len(data)} bytes")
         self.emit("descriptor_value", (descriptor.handle, data))
 
     def write_descriptor(self, descriptor: BleakGATTDescriptor, data: bytes) -> None:
@@ -199,6 +220,7 @@ class AsyncBleBridge:
 
     async def _write_descriptor(self, descriptor: BleakGATTDescriptor, data: bytes) -> None:
         assert self.client is not None
+        self.log(DebugLevel.INFO, f"Writing descriptor 0x{descriptor.handle:04x}: {len(data)} bytes")
         await self.client.write_gatt_descriptor(descriptor.handle, data)
         self.emit("descriptor_value", (descriptor.handle, data))
         self.emit("toast", "Descriptor write complete")
@@ -209,19 +231,27 @@ class AsyncBleBridge:
     async def _toggle_notify(self, characteristic: BleakGATTCharacteristic, enable: bool) -> None:
         assert self.client is not None
         if enable:
+            self.log(DebugLevel.INFO, f"Starting notifications for characteristic 0x{characteristic.handle:04x}")
             await self.client.start_notify(
                 characteristic,
-                lambda sender, data: self.emit("characteristic_value", (sender.handle, bytes(data))),
+                lambda sender, data: self._handle_notification(sender, bytes(data)),
             )
         else:
+            self.log(DebugLevel.INFO, f"Stopping notifications for characteristic 0x{characteristic.handle:04x}")
             await self.client.stop_notify(characteristic)
         self.emit("notify_state", (characteristic.handle, enable))
+
+    def _handle_notification(self, sender: BleakGATTCharacteristic, data: bytes) -> None:
+        self.log(DebugLevel.VERBOSE, f"Notification from characteristic 0x{sender.handle:04x}: {len(data)} bytes")
+        self.emit("characteristic_value", (sender.handle, data))
 
     def disconnect(self) -> None:
         self.call(self._disconnect())
 
     async def _disconnect(self) -> None:
         if self.client:
+            self.log(DebugLevel.INFO, "Disconnecting BLE client")
             await self.client.disconnect()
             self.client = None
         self.emit("disconnected", None)
+        self.log(DebugLevel.INFO, "BLE client disconnected")
