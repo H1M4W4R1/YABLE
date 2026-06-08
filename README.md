@@ -61,6 +61,7 @@ Then:
 - BLE access depends on the operating system Bluetooth stack and adapter permissions.
 - Some devices do not expose readable names or readable characteristic values.
 - Writes and notifications are only shown when the characteristic properties advertise support for them.
+- If characteristic CUD is set to "Service Name" (case and whitespace insensitive) then it will be displayed as service name
 
 ## License
 

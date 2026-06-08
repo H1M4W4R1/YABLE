@@ -36,6 +36,7 @@ class CharacteristicModel:
     value: bytes | None = None
     display_format: ValueFormat = ValueFormat.ASCII
     notifying: bool = False
+    hidden: bool = False
     descriptors: list[DescriptorModel] = field(default_factory=list)
 
 
@@ -45,3 +46,4 @@ class ServiceModel:
     name: str
     characteristics: list[CharacteristicModel] = field(default_factory=list)
     descriptors: list[DescriptorModel] = field(default_factory=list)
+    name_characteristic_handle: int | None = None

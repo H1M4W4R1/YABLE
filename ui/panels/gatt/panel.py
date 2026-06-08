@@ -48,6 +48,8 @@ def render_services(app: tk.Tk, services: list[ServiceModel]) -> None:
 def render_service(app: tk.Tk, service: ServiceModel) -> None:
     content = render_service_header(app, app.gatt_frame, service)
     for characteristic in service.characteristics:
+        if characteristic.hidden:
+            continue
         render_characteristic_card(app, content, characteristic)
     for descriptor in service.descriptors:
         render_descriptor_card(app, content, descriptor, indent=0)

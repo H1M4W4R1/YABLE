@@ -108,11 +108,19 @@ class AsyncBleBridge:
                 user_description = await self._read_user_description(characteristic)
                 if user_description:
                     model.name = user_description
+                read_failed = False
                 if "read" in properties:
                     try:
                         model.value = bytes(await self.client.read_gatt_char(characteristic))
                     except Exception as exc:
+                        read_failed = True
                         model.value = f"Read failed: {exc}".encode("utf-8", errors="replace")
+                if self._is_service_name_description(user_description):
+                    model.hidden = True
+                    service_name = None if read_failed else self._decode_text_value(model.value)
+                    if service_name is not None:
+                        service_model.name = service_name
+                        service_model.name_characteristic_handle = model.handle
                 for descriptor in characteristic.descriptors:
                     descriptor_model = await self._descriptor_model(descriptor)
                     characteristic_descriptor_handles.add(descriptor.handle)
@@ -149,6 +157,16 @@ class AsyncBleBridge:
                 except Exception:
                     return None
         return None
+
+    def _decode_text_value(self, value: bytes | None) -> str | None:
+        if not value:
+            return None
+        return value.decode("utf-8", errors="replace").strip() or None
+
+    def _is_service_name_description(self, description: str | None) -> bool:
+        if description is None:
+            return False
+        return "".join(description.split()).lower() == "servicename"
 
     def read_characteristic(self, characteristic: BleakGATTCharacteristic) -> None:
         self.call(self._read_characteristic(characteristic))

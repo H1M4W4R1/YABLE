@@ -512,6 +512,8 @@ class ServiceSection(QFrame):
         content_layout.setContentsMargins(0, 6, 0, 0)
         content_layout.setSpacing(6)
         for characteristic in service.characteristics:
+            if characteristic.hidden:
+                continue
             content_layout.addWidget(CharacteristicCard(app, characteristic))
         for descriptor in service.descriptors:
             content_layout.addWidget(DescriptorCard(app, descriptor))
