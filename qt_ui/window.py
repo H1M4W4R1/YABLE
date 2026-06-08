@@ -17,7 +17,7 @@ from qt_ui.cards.device_card import DeviceCard
 from qt_ui.cards.service_section import ServiceSection
 from qt_ui.dialogs.write_dialog import WriteDialog
 from qt_ui.event_bus import BleEventBus
-from qt_ui.icons import set_button_icon, set_icon_button_text
+from qt_ui.icons import app_icon, set_button_icon, set_icon_button_text
 from qt_ui.widgets.title_bar import TitleBar
 from qt_ui.widgets.visible_size_grip import VisibleSizeGrip
 
@@ -27,6 +27,7 @@ class BleDebuggerWindow(QMainWindow):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setWindowTitle(APP_TITLE)
+        self.setWindowIcon(app_icon())
         self.resize(1220, 760)
         self.setMinimumSize(980, 620)
 

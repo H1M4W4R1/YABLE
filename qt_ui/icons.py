@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QPushButton
 
 from config import COLORS
+
+APP_ICON_PATH = Path(__file__).resolve().parents[1] / "assets" / "icons" / "app.svg"
 
 try:
     import qtawesome as qta
@@ -25,6 +29,10 @@ def fa_icon(name: str, color: str | None = None) -> QIcon:
     if qta is None:
         return QIcon()
     return qta.icon(name, color=color or COLORS["text"])
+
+
+def app_icon() -> QIcon:
+    return QIcon(str(APP_ICON_PATH))
 
 
 

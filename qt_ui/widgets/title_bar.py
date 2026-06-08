@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QPoint, QSize, Qt
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from config import APP_TITLE, COLORS
-from qt_ui.icons import set_button_icon
+from qt_ui.icons import app_icon, set_button_icon
 
 if TYPE_CHECKING:
     from qt_ui.window import BleDebuggerWindow
@@ -33,6 +33,11 @@ class TitleBar(QFrame):
         title_stack.addWidget(title)
         title_stack.addWidget(subtitle)
 
+        icon_label = QLabel()
+        icon_label.setPixmap(app_icon().pixmap(QSize(34, 34)))
+        icon_label.setFixedSize(38, 38)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         minimize_button = QPushButton("")
         minimize_button.setObjectName("WindowButton")
         minimize_button.setToolTip("Minimize")
@@ -49,6 +54,7 @@ class TitleBar(QFrame):
         set_button_icon(close_button, "fa5s.times", COLORS["muted"])
         close_button.clicked.connect(window.close)
 
+        layout.addWidget(icon_label)
         layout.addLayout(title_stack, 1)
         layout.addWidget(minimize_button)
         layout.addWidget(self.maximize_button)

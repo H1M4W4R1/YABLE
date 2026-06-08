@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title>YABLE app icon</title>
+  <desc>A Bluetooth Low Energy debugger icon with cyan signal rings, circuit nodes, and a Bluetooth rune.</desc>
+  <defs>
+    <linearGradient id="bg" x1="38" y1="28" x2="218" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="0.55" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#05080d"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="64" y1="48" x2="202" y2="214" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="0.55" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="48%" r="58%">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0.34"/>
+      <stop offset="0.65" stop-color="#22d3ee" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <rect x="10" y="10" width="236" height="236" rx="48" fill="none" stroke="#30363d" stroke-width="4"/>
+
+  <path d="M128 48v160" fill="none" stroke="url(#cyan)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M128 48l56 48-56 32" fill="none" stroke="url(#cyan)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M128 128l56 32-56 48" fill="none" stroke="url(#cyan)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 88l56 40-56 40" fill="none" stroke="url(#cyan)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+
+</svg>
