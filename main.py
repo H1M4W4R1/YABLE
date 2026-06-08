@@ -23,7 +23,7 @@ class BleDebuggerApp(tk.Tk):
         self.title(APP_TITLE)
         self.geometry("1220x760")
         self.minsize(980, 620)
-        self.overrideredirect(True)
+        self._configure_borderless_window()
         self.configure(bg=COLORS["bg"])
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -50,12 +50,29 @@ class BleDebuggerApp(tk.Tk):
         self._resize_start_height = 0
         self._panel_resize_active = False
         self._panel_resize_restore_job: str | None = None
+        self._borderless_restore_pending = False
 
         self._configure_styles()
         self._build_layout()
         self._poll_events()
         self._tick_elapsed()
         self.bind("<Map>", self._restore_frameless_chrome)
+
+    def _configure_borderless_window(self) -> None:
+        windowing_system = self.tk.call("tk", "windowingsystem")
+
+        if windowing_system == "win32":
+            try:
+                self.wm_attributes("-toolwindow", False)
+            except tk.TclError:
+                pass
+        elif windowing_system == "x11":
+            try:
+                self.wm_attributes("-type", "normal")
+            except tk.TclError:
+                pass
+
+        self.overrideredirect(True)
 
     def _emit(self, event: str, payload: Any) -> None:
         self.events.put((event, payload))
@@ -110,12 +127,22 @@ class BleDebuggerApp(tk.Tk):
         self.geometry(f"+{x}+{y}")
 
     def _minimize_window(self) -> None:
+        self._borderless_restore_pending = True
         self.overrideredirect(False)
-        self.iconify()
+        self.update_idletasks()
+        try:
+            self.iconify()
+        except tk.TclError:
+            self._borderless_restore_pending = False
+            self._configure_borderless_window()
 
     def _restore_frameless_chrome(self, _event: tk.Event | None = None) -> None:
-        if self.state() == "normal":
-            self.after(10, lambda: self.overrideredirect(True))
+        if not self._borderless_restore_pending:
+            return
+        if self.state() != "normal":
+            return
+        self._borderless_restore_pending = False
+        self.after(10, self._configure_borderless_window)
 
     def _toggle_maximize(self) -> None:
         if self._is_maximized:
