@@ -762,9 +762,9 @@ class BleDebuggerWindow(QMainWindow):
                 border-color: {COLORS["success"]};
             }}
             QFrame#ServiceHeader {{
-                background: {COLORS["panel_2"]};
-                border: 1px solid {COLORS["line"]};
-                border-radius: 8px;
+                background: transparent;
+                border: 0;
+                border-radius: 0;
             }}
             QPushButton {{
                 border: 0;
